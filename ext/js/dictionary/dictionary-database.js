@@ -25,11 +25,16 @@ import {stringReverse} from '../core/utilities.js';
 import {Database} from '../data/database.js';
 
 export class DictionaryDatabase {
-    constructor() {
+    /**
+     * @param {{name?: string, embedded?: boolean}} [options]
+     */
+    constructor({name = 'dict', embedded = false} = {}) {
         /** @type {Database<import('dictionary-database').ObjectStoreName>} */
         this._db = new Database();
         /** @type {string} */
-        this._dbName = 'dict';
+        this._dbName = name;
+        /** @type {boolean} */
+        this._embedded = embedded;
         /** @type {import('dictionary-database').CreateQuery<string>} */
         this._createOnlyQuery1 = (item) => IDBKeyRange.only(item);
         /** @type {import('dictionary-database').CreateQuery<import('dictionary-database').DictionaryAndQueryRequest>} */
@@ -83,7 +88,7 @@ export class DictionaryDatabase {
      */
     async prepare() {
         // do not do upgrades in web workers as they are considered to be children of the main thread and are not responsible for database upgrades
-        const isWorker = self.constructor.name !== 'Window';
+        const isWorker = !this._embedded && self.constructor.name !== 'Window';
         const upgrade =
             /** @type {import('database').StructureDefinition<import('dictionary-database').ObjectStoreName>[]?} */
             ([
@@ -161,7 +166,7 @@ export class DictionaryDatabase {
         );
 
         // when we are not a worker ourselves, create a worker which is basically just a wrapper around this class, which we can use to offload some functions to
-        if (!isWorker) {
+        if (!isWorker && !this._embedded) {
             this._worker = new Worker('/js/dictionary/dictionary-database-worker-main.js', {type: 'module'});
             this._worker.addEventListener('error', (event) => {
                 log.log('Worker terminated with error:', event);
@@ -169,7 +174,7 @@ export class DictionaryDatabase {
             this._worker.addEventListener('unhandledrejection', (event) => {
                 log.log('Unhandled promise rejection in worker:', event);
             });
-        } else {
+        } else if (!this._embedded) {
             // when we are the worker, prepare to need to do some SVG work and load appropriate wasm & fonts
             await initWasm(fetch('/lib/resvg.wasm'));
 
