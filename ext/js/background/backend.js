@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+import {parseTextScanning} from '../language/scanning-parser.js';
 import {AccessibilityController} from '../accessibility/accessibility-controller.js';
 import {AnkiConnect} from '../comm/anki-connect.js';
 import {ClipboardMonitor} from '../comm/clipboard-monitor.js';
@@ -36,7 +37,7 @@ import {DictionaryDatabase} from '../dictionary/dictionary-database.js';
 import {Environment} from '../extension/environment.js';
 import {CacheMap} from '../general/cache-map.js';
 import {ObjectPropertyAccessor} from '../general/object-property-accessor.js';
-import {distributeFuriganaInflected, isCodePointJapanese, convertKatakanaToHiragana as jpConvertKatakanaToHiragana} from '../language/ja/japanese.js';
+import {distributeFuriganaInflected, convertKatakanaToHiragana as jpConvertKatakanaToHiragana} from '../language/ja/japanese.js';
 import {getLanguageSummaries, isTextLookupWorthy} from '../language/languages.js';
 import {Translator} from '../language/translator.js';
 import {AudioDownloader} from '../media/audio-downloader.js';
@@ -1737,82 +1738,7 @@ export class Backend {
         const details = {matchType: 'exact', deinflect: true};
         const findTermsOptions = this._getTranslatorFindTermsOptions(mode, details, options);
         if (useAllFrequencyDictionaries) { findTermsOptions.useAllFrequencyDictionaries = true; }
-        /** @type {import('api').ParseTextLine[]} */
-        const results = [];
-        let previousUngroupedSegment = null;
-        let i = 0;
-        const ii = text.length;
-        while (i < ii) {
-            const codePoint = /** @type {number} */ (text.codePointAt(i));
-            const character = String.fromCodePoint(codePoint);
-            const substring = text.substring(i, i + scanLength);
-            const metadataMode = useAllFrequencyDictionaries === true ? 1 : 0;
-            const cacheKey = `${optionsContext.index}:${metadataMode}:${substring}`;
-            let cached = this._textParseCache.get(cacheKey);
-            if (typeof cached === 'undefined') {
-                const {dictionaryEntries, originalTextLength} = await this._translator.findTerms(
-                    mode,
-                    substring,
-                    findTermsOptions,
-                );
-                /** @type {import('api').ParseTextSegment[]} */
-                const textSegments = [];
-                if (dictionaryEntries.length > 0 &&
-                originalTextLength > 0 &&
-                (originalTextLength !== character.length || isCodePointJapanese(codePoint))
-                ) {
-                    const {headwords: [{term, reading}]} = dictionaryEntries[0];
-                    const source = substring.substring(0, originalTextLength);
-                    for (const {text: text2, reading: reading2} of distributeFuriganaInflected(term, reading, source)) {
-                        textSegments.push({text: text2, reading: reading2});
-                    }
-                    if (textSegments.length > 0) {
-                        const token = textSegments.map((s) => s.text).join('');
-                        const trimmedHeadwords = [];
-                        for (const dictionaryEntry of dictionaryEntries) {
-                            const validHeadwords = [];
-                            for (const headword of dictionaryEntry.headwords) {
-                                const validSources = [];
-                                for (const src of headword.sources) {
-                                    if (src.originalText !== token) { continue; }
-                                    if (!src.isPrimary) { continue; }
-                                    if (src.matchType !== 'exact') { continue; }
-                                    validSources.push(src);
-                                }
-                                if (validSources.length > 0) {
-                                    validHeadwords.push({
-                                        term: headword.term,
-                                        reading: headword.reading,
-                                        sources: validSources,
-                                        frequencies: dictionaryEntry.frequencies.filter((f) => f.headwordIndex === headword.headwordIndex),
-                                        pronunciations: dictionaryEntry.pronunciations.filter((p) => p.headwordIndex === headword.headwordIndex),
-                                    });
-                                }
-                            }
-                            if (validHeadwords.length > 0) { trimmedHeadwords.push(validHeadwords); }
-                        }
-                        textSegments[0].headwords = trimmedHeadwords;
-                    }
-                }
-                cached = {originalTextLength, textSegments};
-                if (typeof optionsContext.index !== 'undefined') { this._textParseCache.set(cacheKey, cached); }
-            }
-            const {originalTextLength, textSegments} = cached;
-            if (textSegments.length > 0) {
-                previousUngroupedSegment = null;
-                results.push(textSegments);
-                i += originalTextLength;
-            } else {
-                if (previousUngroupedSegment === null) {
-                    previousUngroupedSegment = {text: character, reading: ''};
-                    results.push([previousUngroupedSegment]);
-                } else {
-                    previousUngroupedSegment.text += character;
-                }
-                i += character.length;
-            }
-        }
-        return results;
+        return parseTextScanning(this._translator, text, scanLength, findTermsOptions, this._textParseCache, optionsContext.index, useAllFrequencyDictionaries);
     }
 
     /**
