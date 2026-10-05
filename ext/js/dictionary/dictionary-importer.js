@@ -43,10 +43,13 @@ export class DictionaryImporter {
     /**
      * @param {import('dictionary-importer-media-loader').GenericMediaLoader} mediaLoader
      * @param {import('dictionary-importer').OnProgressCallback} [onProgress]
+     * @param {import('@zip.js/zip.js').Configuration} [zipOptions]
      */
-    constructor(mediaLoader, onProgress) {
+    constructor(mediaLoader, onProgress, zipOptions) {
         /** @type {import('dictionary-importer-media-loader').GenericMediaLoader} */
         this._mediaLoader = mediaLoader;
+        /** @type {import('@zip.js/zip.js').Configuration | undefined} */
+        this._zipOptions = zipOptions;
         /** @type {import('dictionary-importer').OnProgressCallback} */
         this._onProgress = typeof onProgress === 'function' ? onProgress : () => {};
         /** @type {import('dictionary-importer').ProgressData} */
@@ -100,7 +103,7 @@ export class DictionaryImporter {
 
         this._progressReset();
 
-        configure({
+        configure(this._zipOptions ?? {
             workerScripts: {
                 deflate: ['../../lib/z-worker.js'],
                 inflate: ['../../lib/z-worker.js'],
